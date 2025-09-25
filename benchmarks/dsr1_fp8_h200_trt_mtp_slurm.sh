@@ -82,7 +82,7 @@ fi
 MAX_NUM_TOKENS=$(( ((MTP+1)*MAX_BATCH_SIZE+ISL+64+63)/64*64 ))
 
 # Launch TRT-LLM server
-mpirun -n 1 --oversubscribe --allow-run-as-root \
+PYTHONNOUSERSITE=1 mpirun -n 1 --oversubscribe --allow-run-as-root \
     trtllm-serve $MODEL --port=$PORT \
     --trust_remote_code \
     --backend=pytorch \
