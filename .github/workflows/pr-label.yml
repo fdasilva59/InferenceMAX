@@ -106,6 +106,45 @@ jobs:
     secrets: inherit
     with: *benchmark_tmpl_args
 
+  bmk-h200-trt-llama:
+    if: contains(github.event.pull_request.labels.*.name, 'llama-h200-trt')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: *h200_runners
+        config:
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'nvidia/Llama-3.3-70B-Instruct-FP8', framework: 'trt', precision: 'fp8', exp-name: '70b_test' }
+    name: 'llama-trt-${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with: *benchmark_tmpl_args
+
+  bmk-h200-trt-dsr1:
+    if: contains(github.event.pull_request.labels.*.name, 'dsr1-h200-trt')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: *h200_runners
+        config:
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'deepseek-ai/DeepSeek-R1-0528', framework: 'trt', precision: 'fp8', exp-name: 'dsr1_test' }
+    name: 'dsr1-trt-${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with: *benchmark_tmpl_args
+
+  bmk-h200-trt-gptoss:
+    if: contains(github.event.pull_request.labels.*.name, 'gptoss-h200-trt')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: *h200_runners
+        config:
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'openai/gpt-oss-120b', framework: 'trt', precision: 'fp4', exp-name: 'gptoss_test' }
+    name: 'gptoss-trt-${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with: *benchmark_tmpl_args
+
   #######################################
   #               B200                  #
   #######################################
@@ -167,6 +206,66 @@ jobs:
     uses: ./.github/workflows/benchmark-tmpl.yml
     secrets: inherit
     with: *benchmark_tmpl_args_b200
+
+  bmk-b200-trt-llama:
+    if: contains(github.event.pull_request.labels.*.name, 'llama-b200-trt')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: &b200_trt_runners
+          - 'b200-nv_0'
+          - 'b200-nv_1'
+          - 'b200-nb_0'
+          - 'b200-nb_1'
+        config:
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'nvidia/Llama-3.3-70B-Instruct-FP8', framework: 'trt', precision: 'fp8', exp-name: '70b_test' }
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'nvidia/Llama-3.3-70B-Instruct-FP4', framework: 'trt', precision: 'fp4', exp-name: '70b_test' }
+
+    name: 'llama-trt-${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with: &benchmark_tmpl_args_b200_trt
+      runner: ${{ matrix.runner }}
+      image: ${{ matrix.config.image }}
+      model: ${{ matrix.config.model }}
+      framework: ${{ matrix.config.framework }}
+      precision: ${{ matrix.config.precision }}
+      exp-name: ${{ matrix.config.exp-name }}
+      isl: 1024
+      osl: 1024
+      max-model-len: 2048
+      random-range-ratio: 0.8
+      tp-list: '[8]'
+      conc-list: '[1]'
+
+  bmk-b200-trt-dsr1:
+    if: contains(github.event.pull_request.labels.*.name, 'dsr1-b200-trt')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: *b200_trt_runners
+        config:
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'deepseek-ai/DeepSeek-R1-0528', framework: 'trt', precision: 'fp8', exp-name: 'dsr1_test' }
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'nvidia/DeepSeek-R1-0528-FP4', framework: 'trt', precision: 'fp4', exp-name: 'dsr1_test' }
+
+    name: 'dsr1-trt-${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with: *benchmark_tmpl_args_b200_trt
+
+  bmk-b200-trt-gptoss:
+    if: contains(github.event.pull_request.labels.*.name, 'gptoss-b200-trt')
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: *b200_trt_runners
+        config:
+          - { image: 'nvcr.io#nvidia/tensorrt-llm/release:1.1.0rc2.post2', model: 'openai/gpt-oss-120b', framework: 'trt', precision: 'fp4', exp-name: 'gptoss_test' }
+
+    name: 'gptoss-trt-${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with: *benchmark_tmpl_args_b200_trt
 
   #######################################
   #               MI300X                #
