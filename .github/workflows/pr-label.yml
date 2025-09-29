@@ -5,36 +5,35 @@ on:
     types: [labeled]
 
 jobs:
-  parse-label:
-    runs-on: ubuntu-latest
-    outputs:
-      model: ${{ steps.parse.outputs.model }}
-      gpu: ${{ steps.parse.outputs.gpu }}
-      should_run: ${{ steps.parse.outputs.should_run }}
-    steps:
-      - name: Parse and validate the label
-        id: parse
-        run: |
-          LABEL="${{ github.event.label.name }}"
+#   parse-label:
+#     runs-on: ubuntu-latest
+#     outputs:
+#       model: ${{ steps.parse.outputs.model }}
+#       gpu: ${{ steps.parse.outputs.gpu }}
+#       should_run: ${{ steps.parse.outputs.should_run }}
+#     steps:
+#       - name: Parse and validate the label
+#         id: parse
+#         run: |
+#           LABEL="${{ github.event.label.name }}"
           
-          if [[ ! $LABEL =~ ^([a-z0-9]+)-([a-z0-9]+)$ ]]; then
-            echo "should_run=false" >> $GITHUB_OUTPUT
-            echo "PR label must be in the format '<MODEL_NAME>-<GPU_TYPE>, e.g., 'llama-h100'"
-            exit 0
-          fi
+#           if [[ ! $LABEL =~ ^([a-z0-9]+)-([a-z0-9]+)$ ]]; then
+#             echo "should_run=false" >> $GITHUB_OUTPUT
+#             echo "PR label must be in the format '<MODEL_NAME>-<GPU_TYPE>, e.g., 'llama-h100'"
+#             exit 0
+#           fi
 
-            # e.g., "llama-h100"
-            MODEL="${BASH_REMATCH[1]}"
-            GPU="${BASH_REMATCH[2]}"
+#             # e.g., "llama-h100"
+#             MODEL="${BASH_REMATCH[1]}"
+#             GPU="${BASH_REMATCH[2]}"
             
-            echo "model=$MODEL" >> $GITHUB_OUTPUT
-            echo "gpu=$GPU" >> $GITHUB_OUTPUT
-            echo "should_run=true" >> $GITHUB_OUTPUT
+#             echo "model=$MODEL" >> $GITHUB_OUTPUT
+#             echo "gpu=$GPU" >> $GITHUB_OUTPUT
+#             echo "should_run=true" >> $GITHUB_OUTPUT
 
 
   bmk-h100-llama:
-    needs: parse-label
-    if: needs.parse-label.outputs.should_run == 'true' && needs.parse-label.outputs.gpu == 'h100' && needs.parse-label.outputs.model == 'llama'
+    if: contains(github.event.pull_request.labels.*.name, 'llama-h100')
     strategy:
       fail-fast: false
       matrix:
@@ -44,8 +43,38 @@ jobs:
           - 'h100-cw_0'
           - 'h100-cw_1'
         config:
-          - { image: 'vllm/vllm-openai:v0.10.2', model: 'nvidia/Llama-3.3-70B-Instruct-FP8', framework: 'vllm', precision: 'fp8', exp-name: '70b_fp8_test' }
-          - { image: 'vllm/vllm-openai:v0.10.2', model: 'nvidia/Llama-3.3-70B-Instruct-FP4', framework: 'vllm', precision: 'fp4', exp-name: '70b_fp4_test' }
+          - { image: 'vllm/vllm-openai:v0.10.2', model: 'nvidia/Llama-3.3-70B-Instruct-FP8', framework: 'vllm', precision: 'fp8', exp-name: '70b_test' }
+
+    name: '${{ matrix.runner }}'
+    uses: ./.github/workflows/benchmark-tmpl.yml
+    secrets: inherit
+    with:
+      runner: ${{ matrix.runner }}
+      image: ${{ matrix.config.image }}
+      model: ${{ matrix.config.model }}
+      framework: ${{ matrix.config.framework }}
+      precision: ${{ matrix.config.precision }}
+      exp-name: ${{ matrix.config.exp-name }}
+      isl: 1024
+      osl: 1024
+      max-model-len: 2048
+      random-range-ratio: 0.8
+      tp-list: '[8]'
+      conc-list: '[1]'
+
+  bmk-h100-gptoss:
+    needs: parse-label
+    if: needs.parse-label.outputs.should_run == 'true' && needs.parse-label.outputs.gpu == 'h100' && needs.parse-label.outputs.model == 'gptoss'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - 'h100-cr_0'
+          - 'h100-cr_1'
+          - 'h100-cw_0'
+          - 'h100-cw_1'
+        config:
+          - { image: 'vllm/vllm-openai:v0.10.2', model: 'openai/gpt-oss-120b', framework: 'vllm', precision: 'fp4', exp-name: 'gptoss_test' }
 
     name: '${{ matrix.runner }}'
     uses: ./.github/workflows/benchmark-tmpl.yml
