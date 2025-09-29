@@ -63,8 +63,7 @@ jobs:
       conc-list: '[1]'
 
   bmk-h100-gptoss:
-    needs: parse-label
-    if: needs.parse-label.outputs.should_run == 'true' && needs.parse-label.outputs.gpu == 'h100' && needs.parse-label.outputs.model == 'gptoss'
+    if: contains(github.event.pull_request.labels.*.name, 'gptoss-h100')
     strategy:
       fail-fast: false
       matrix:
