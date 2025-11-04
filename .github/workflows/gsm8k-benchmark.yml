@@ -9,7 +9,7 @@ on:
                 type: string
                 default: "meta-llama/Llama-3.1-8B-Instruct"
             runner:
-                description: "Runner to use (e.g., h100-cr, h200-cw, b200-nv, mi300x-amd)"
+                description: "Runner to use (e.g., h100-cr, h200-cw, b200-nv, mi300x-amd, mi325x-amd, mi355x-amd)"
                 required: true
                 type: string
                 default: "h100-cr"

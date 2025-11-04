@@ -13,7 +13,7 @@ The GSM8k benchmark CI is implemented in `.github/workflows/gsm8k-benchmark.yml`
 ### Parameters
 
 - **model**: The model to evaluate (e.g., `meta-llama/Llama-3.1-8B-Instruct`)
-- **runner**: The GPU runner to use (e.g., `h100-cr`, `h200-cw`, `b200-nv`, `mi300x-amd`, `mi325x-amd`)
+- **runner**: The GPU runner to use (e.g., `h100-cr`, `h200-cw`, `b200-nv`, `mi300x-amd`, `mi325x-amd`, `mi355x-amd`)
 - **image**: Docker image to use (e.g., `vllm/vllm-openai:latest`)
 - **framework**: Inference framework (`vllm` or `sglang`)
 - **precision**: Model precision (`fp16`, `fp8`, `fp4`)
@@ -43,6 +43,7 @@ Located in `runners/`:
 - `launch_gsm8k_b200.sh`: Launch on B200 GPUs
 - `launch_gsm8k_mi300x.sh`: Launch on MI300X GPUs
 - `launch_gsm8k_mi325x.sh`: Launch on MI325X GPUs
+- `launch_gsm8k_mi355x.sh`: Launch on MI355X GPUs
 
 These scripts handle:
 - Docker container setup
