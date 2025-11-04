@@ -60,6 +60,8 @@ jobs:
         runs-on: ${{ inputs.runner }}
         timeout-minutes: 180
         name: 'GSM8k - ${{ inputs.model }} - ${{ inputs.framework }} - ${{ inputs.precision }} - tp=${{ inputs.tp }}'
+        permissions:
+            contents: read
         steps:
             - name: Resource cleanup
               run: |
