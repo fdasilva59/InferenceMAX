@@ -15,10 +15,16 @@ on:
         required: true
         type: string
 
+# Set default permissions to read-only for security
+permissions:
+  contents: read
+
 jobs:
   # Step 1: Determine how many batches are needed
   get-batch-count:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       batch-count: ${{ steps.count.outputs.batch-count }}
     steps:
@@ -43,6 +49,8 @@ jobs:
   get-batch-configs:
     needs: get-batch-count
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # Create a matrix with one entry per batch
     strategy:
       matrix:
@@ -104,6 +112,8 @@ jobs:
     needs: [get-batch-count, benchmark-batch-0]
     if: ${{ always() }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Summary
         run: |
