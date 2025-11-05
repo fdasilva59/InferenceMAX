@@ -1,6 +1,7 @@
 import json
 import yaml
 import argparse
+import math
 from pydantic import BaseModel, Field, ValidationError, ConfigDict
 from typing import List
 
@@ -980,7 +981,6 @@ def main():
     validate_matrix_output(matrix_values)
 
     # Calculate number of batches
-    import math
     total_batches = math.ceil(len(matrix_values) / args.max_batch_size)
     
     # If only batch count requested, output it and exit

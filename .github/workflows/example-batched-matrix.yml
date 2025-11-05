@@ -47,6 +47,9 @@ jobs:
     strategy:
       matrix:
         # Generate array [0, 1, 2, ..., batch-count-1]
+        # This expression creates a comma-separated list of indices and wraps it in an array
+        # Example: if batch-count=3, this generates: [0, 1, 2]
+        # Note: This is a workaround for GitHub Actions' lack of native range array generation
         batch-index: ${{ fromJson(format('[{0}]', join(range(0, fromJson(needs.get-batch-count.outputs.batch-count)), ','))) }}
     outputs:
       # Each batch gets its own output

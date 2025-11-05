@@ -1,5 +1,6 @@
 import pytest
 import yaml
+import math
 from unittest.mock import patch
 from generate_sweep_configs import (
     validate_master_configs_structure,
@@ -1669,7 +1670,6 @@ def test_main_with_get_batch_count(temp_config_files):
                            '--get-batch-count']):
         batch_count = main()
     
-    import math
     expected_batches = math.ceil(len(all_results) / 2)
     assert batch_count == expected_batches
 
@@ -1699,7 +1699,6 @@ def test_main_batch_covers_all_configs(temp_config_files):
     
     # Get results in batches of 2
     batch_size = 2
-    import math
     num_batches = math.ceil(len(all_results) / batch_size)
     
     batched_results = []
