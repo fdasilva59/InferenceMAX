@@ -3,12 +3,10 @@ import json
 import os
 import sys
 from pathlib import Path
-from unittest.mock import patch, mock_open
 
-
-# Get the path to process_result.py dynamically
-SCRIPT_DIR = Path(__file__).parent
-PROCESS_RESULT_PATH = SCRIPT_DIR / 'process_result.py'
+# Import the function to test
+sys.path.insert(0, str(Path(__file__).parent))
+from process_result import process_benchmark_result
 
 
 @pytest.fixture
@@ -44,33 +42,10 @@ def basic_env_vars():
     }
 
 
-def run_process_result_script(tmp_path, result_data, env_vars, result_filename='test_result.json'):
-    """Helper to create result file, change directory, execute script, and clean up."""
-    result_file = tmp_path / result_filename
-    with open(result_file, 'w') as f:
-        json.dump(result_data, f)
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-    try:
-        with patch.dict(os.environ, env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        output_file = tmp_path / f'agg_{Path(result_filename).stem}.json'
-        return output_file
-    finally:
-        os.chdir(original_dir)
-
-
-def test_basic_processing(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_basic_processing(sample_benchmark_result, basic_env_vars):
     """Test basic processing of benchmark results."""
-    output_file = run_process_result_script(
-        tmp_path,
-        sample_benchmark_result,
-        basic_env_vars,
-        result_filename='test_result.json'
-    )
-    assert output_file.exists()
-    with open(output_file) as f:
-        result = json.load(f)
+    result = process_benchmark_result(sample_benchmark_result, basic_env_vars)
+    
     assert result['hw'] == 'h200'
     assert result['tp'] == 8
     assert result['ep'] == 1
@@ -82,7 +57,9 @@ def test_basic_processing(tmp_path, sample_benchmark_result, basic_env_vars):
     assert result['tput_per_gpu'] == 10000.0 / 8
     assert result['output_tput_per_gpu'] == 3000.0 / 8
     assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 8
-def test_ms_to_seconds_conversion(tmp_path, basic_env_vars):
+
+
+def test_ms_to_seconds_conversion(basic_env_vars):
     """Test conversion of millisecond values to seconds."""
     benchmark_result = {
         'max_concurrency': 4,
@@ -94,31 +71,15 @@ def test_ms_to_seconds_conversion(tmp_path, basic_env_vars):
         'decode_latency_ms': 500.0
     }
     
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(benchmark_result, f)
+    result = process_benchmark_result(benchmark_result, basic_env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-    
-    try:
-        with patch.dict(os.environ, basic_env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # Check ms values were converted to seconds
-        assert result['ttft'] == 200.0 / 1000.0
-        assert result['e2e_latency'] == 1000.0 / 1000.0
-        assert result['decode_latency'] == 500.0 / 1000.0
-        
-    finally:
-        os.chdir(original_dir)
+    # Check ms values were converted to seconds
+    assert result['ttft'] == 200.0 / 1000.0
+    assert result['e2e_latency'] == 1000.0 / 1000.0
+    assert result['decode_latency'] == 500.0 / 1000.0
 
 
-def test_tpot_to_intvty_conversion(tmp_path, basic_env_vars):
+def test_tpot_to_intvty_conversion(basic_env_vars):
     """Test conversion of tpot (time per output token) to intvty (interactivity/throughput)."""
     benchmark_result = {
         'max_concurrency': 2,
@@ -130,147 +91,67 @@ def test_tpot_to_intvty_conversion(tmp_path, basic_env_vars):
         'prefill_tpot_ms': 30.0
     }
     
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(benchmark_result, f)
+    result = process_benchmark_result(benchmark_result, basic_env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
+    # Check tpot values were converted to intvty
+    # The logic: if 'tpot' in key, convert ms value and then intvty = 1000.0 / tpot_ms
+    # So: tpot_ms: 25.0 -> tpot: 0.025 (ms to s), intvty: 1000.0/25.0 = 40.0
+    assert result['tpot'] == 25.0 / 1000.0  # Converted from ms to s
+    assert result['intvty'] == 1000.0 / 25.0  # intvty = 1000.0 / tpot_ms
     
-    try:
-        with patch.dict(os.environ, basic_env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # Check tpot values were converted to intvty
-        # The logic: if 'tpot' in key, convert ms value and then intvty = 1000.0 / tpot_ms
-        # So: tpot_ms: 25.0 -> tpot: 0.025 (ms to s), intvty: 1000.0/25.0 = 40.0
-        assert result['tpot'] == 25.0 / 1000.0  # Converted from ms to s
-        assert result['intvty'] == 1000.0 / 25.0  # intvty = 1000.0 / tpot_ms
-        
-        assert result['decode_tpot'] == 20.0 / 1000.0
-        assert result['decode_intvty'] == 1000.0 / 20.0
-        
-        assert result['prefill_tpot'] == 30.0 / 1000.0
-        assert result['prefill_intvty'] == 1000.0 / 30.0
-        
-        # Check that the intvty calculation is correct
-        assert 'decode_intvty' in result
-        assert 'prefill_intvty' in result
-        
-    finally:
-        os.chdir(original_dir)
+    assert result['decode_tpot'] == 20.0 / 1000.0
+    assert result['decode_intvty'] == 1000.0 / 20.0
+    
+    assert result['prefill_tpot'] == 30.0 / 1000.0
+    assert result['prefill_intvty'] == 1000.0 / 30.0
+    
+    # Check that the intvty calculation is correct
+    assert 'decode_intvty' in result
+    assert 'prefill_intvty' in result
 
 
-def test_mtp_mode_included(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_mtp_mode_included(sample_benchmark_result, basic_env_vars):
     """Test that MTP mode is included when set."""
     env_vars = basic_env_vars.copy()
     env_vars['MTP_MODE'] = 'disaggregated'
     
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(sample_benchmark_result, f)
+    result = process_benchmark_result(sample_benchmark_result, env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-    
-    try:
-        with patch.dict(os.environ, env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        assert 'mtp' in result
-        assert result['mtp'] == 'disaggregated'
-        
-    finally:
-        os.chdir(original_dir)
+    assert 'mtp' in result
+    assert result['mtp'] == 'disaggregated'
 
 
-def test_mtp_mode_not_included(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_mtp_mode_not_included(sample_benchmark_result, basic_env_vars):
     """Test that MTP mode is not included when not set."""
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(sample_benchmark_result, f)
+    result = process_benchmark_result(sample_benchmark_result, basic_env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-    
-    try:
-        with patch.dict(os.environ, basic_env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        assert 'mtp' not in result
-        
-    finally:
-        os.chdir(original_dir)
+    assert 'mtp' not in result
 
 
-def test_prefill_decode_gpus_explicit(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_prefill_decode_gpus_explicit(sample_benchmark_result, basic_env_vars):
     """Test explicit prefill and decode GPU counts."""
     env_vars = basic_env_vars.copy()
     env_vars['PREFILL_GPUS'] = '4'
     env_vars['DECODE_GPUS'] = '4'
     
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(sample_benchmark_result, f)
+    result = process_benchmark_result(sample_benchmark_result, env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-    
-    try:
-        with patch.dict(os.environ, env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # With explicit GPU counts
-        assert result['output_tput_per_gpu'] == 3000.0 / 4
-        assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 4
-        
-    finally:
-        os.chdir(original_dir)
+    # With explicit GPU counts
+    assert result['output_tput_per_gpu'] == 3000.0 / 4
+    assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 4
 
 
-def test_prefill_decode_gpus_defaults_to_tp(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_prefill_decode_gpus_defaults_to_tp(sample_benchmark_result, basic_env_vars):
     """Test that prefill/decode GPUs default to TP size when not specified."""
     # Default env vars have empty strings for PREFILL_GPUS and DECODE_GPUS
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(sample_benchmark_result, f)
+    result = process_benchmark_result(sample_benchmark_result, basic_env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
-    
-    try:
-        with patch.dict(os.environ, basic_env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # Should use TP size (8) when PREFILL_GPUS and DECODE_GPUS are empty
-        assert result['output_tput_per_gpu'] == 3000.0 / 8
-        assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 8
-        
-    finally:
-        os.chdir(original_dir)
+    # Should use TP size (8) when PREFILL_GPUS and DECODE_GPUS are empty
+    assert result['output_tput_per_gpu'] == 3000.0 / 8
+    assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 8
 
 
-def test_different_tp_sizes(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_different_tp_sizes(sample_benchmark_result, basic_env_vars):
     """Test processing with different TP sizes."""
     test_cases = [
         ('1', 1),
@@ -284,29 +165,13 @@ def test_different_tp_sizes(tmp_path, sample_benchmark_result, basic_env_vars):
         env_vars = basic_env_vars.copy()
         env_vars['TP'] = tp_str
         
-        result_file = tmp_path / 'test_result.json'
-        with open(result_file, 'w') as f:
-            json.dump(sample_benchmark_result, f)
+        result = process_benchmark_result(sample_benchmark_result, env_vars)
         
-        original_dir = os.getcwd()
-        os.chdir(tmp_path)
-        
-        try:
-            with patch.dict(os.environ, env_vars):
-                exec(open(PROCESS_RESULT_PATH).read())
-            
-            output_file = tmp_path / 'agg_test_result.json'
-            with open(output_file) as f:
-                result = json.load(f)
-            
-            assert result['tp'] == tp_int
-            assert result['tput_per_gpu'] == 10000.0 / tp_int
-            
-        finally:
-            os.chdir(original_dir)
+        assert result['tp'] == tp_int
+        assert result['tput_per_gpu'] == 10000.0 / tp_int
 
 
-def test_different_ep_sizes(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_different_ep_sizes(sample_benchmark_result, basic_env_vars):
     """Test processing with different EP sizes."""
     test_cases = [1, 2, 4, 8]
     
@@ -314,59 +179,27 @@ def test_different_ep_sizes(tmp_path, sample_benchmark_result, basic_env_vars):
         env_vars = basic_env_vars.copy()
         env_vars['EP_SIZE'] = str(ep_size)
         
-        result_file = tmp_path / 'test_result.json'
-        with open(result_file, 'w') as f:
-            json.dump(sample_benchmark_result, f)
+        result = process_benchmark_result(sample_benchmark_result, env_vars)
         
-        original_dir = os.getcwd()
-        os.chdir(tmp_path)
-        
-        try:
-            with patch.dict(os.environ, env_vars):
-                exec(open(PROCESS_RESULT_PATH).read())
-            
-            output_file = tmp_path / 'agg_test_result.json'
-            with open(output_file) as f:
-                result = json.load(f)
-            
-            assert result['ep'] == ep_size
-            
-        finally:
-            os.chdir(original_dir)
+        assert result['ep'] == ep_size
 
 
-def test_output_file_content_structure(tmp_path, sample_benchmark_result, basic_env_vars):
-    """Test that output file has the expected structure."""
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(sample_benchmark_result, f)
+def test_output_file_content_structure(sample_benchmark_result, basic_env_vars):
+    """Test that output has the expected structure."""
+    result = process_benchmark_result(sample_benchmark_result, basic_env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
+    # Check required fields exist
+    required_fields = [
+        'hw', 'tp', 'ep', 'dp_attention', 'conc', 'model',
+        'framework', 'precision', 'tput_per_gpu', 
+        'output_tput_per_gpu', 'input_tput_per_gpu'
+    ]
     
-    try:
-        with patch.dict(os.environ, basic_env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # Check required fields exist
-        required_fields = [
-            'hw', 'tp', 'ep', 'dp_attention', 'conc', 'model',
-            'framework', 'precision', 'tput_per_gpu', 
-            'output_tput_per_gpu', 'input_tput_per_gpu'
-        ]
-        
-        for field in required_fields:
-            assert field in result, f"Missing required field: {field}"
-        
-    finally:
-        os.chdir(original_dir)
+    for field in required_fields:
+        assert field in result, f"Missing required field: {field}"
 
 
-def test_complex_benchmark_result(tmp_path, basic_env_vars):
+def test_complex_benchmark_result(basic_env_vars):
     """Test processing with a more complex benchmark result."""
     complex_result = {
         'max_concurrency': 16,
@@ -383,39 +216,23 @@ def test_complex_benchmark_result(tmp_path, basic_env_vars):
         'p99_latency_ms': 3000.0
     }
     
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(complex_result, f)
+    result = process_benchmark_result(complex_result, basic_env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
+    # Check all ms values were converted
+    assert result['ttft'] == 100.0 / 1000.0
+    assert result['tpot'] == 15.0 / 1000.0
+    assert result['e2e_latency'] == 2000.0 / 1000.0
+    assert result['p50_latency'] == 1500.0 / 1000.0
+    assert result['p90_latency'] == 2500.0 / 1000.0
+    assert result['p99_latency'] == 3000.0 / 1000.0
     
-    try:
-        with patch.dict(os.environ, basic_env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # Check all ms values were converted
-        assert result['ttft'] == 100.0 / 1000.0
-        assert result['tpot'] == 15.0 / 1000.0
-        assert result['e2e_latency'] == 2000.0 / 1000.0
-        assert result['p50_latency'] == 1500.0 / 1000.0
-        assert result['p90_latency'] == 2500.0 / 1000.0
-        assert result['p99_latency'] == 3000.0 / 1000.0
-        
-        # Check tpot to intvty conversions
-        assert 'intvty' in result
-        assert 'decode_intvty' in result
-        assert 'prefill_intvty' in result
-        
-    finally:
-        os.chdir(original_dir)
+    # Check tpot to intvty conversions
+    assert 'intvty' in result
+    assert 'decode_intvty' in result
+    assert 'prefill_intvty' in result
 
 
-def test_dp_attention_values(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_dp_attention_values(sample_benchmark_result, basic_env_vars):
     """Test different DP_ATTENTION values."""
     test_values = ['true', 'false', 'True', 'False']
     
@@ -423,28 +240,12 @@ def test_dp_attention_values(tmp_path, sample_benchmark_result, basic_env_vars):
         env_vars = basic_env_vars.copy()
         env_vars['DP_ATTENTION'] = dp_attn_value
         
-        result_file = tmp_path / 'test_result.json'
-        with open(result_file, 'w') as f:
-            json.dump(sample_benchmark_result, f)
+        result = process_benchmark_result(sample_benchmark_result, env_vars)
         
-        original_dir = os.getcwd()
-        os.chdir(tmp_path)
-        
-        try:
-            with patch.dict(os.environ, env_vars):
-                exec(open(PROCESS_RESULT_PATH).read())
-            
-            output_file = tmp_path / 'agg_test_result.json'
-            with open(output_file) as f:
-                result = json.load(f)
-            
-            assert result['dp_attention'] == dp_attn_value
-            
-        finally:
-            os.chdir(original_dir)
+        assert result['dp_attention'] == dp_attn_value
 
 
-def test_different_frameworks(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_different_frameworks(sample_benchmark_result, basic_env_vars):
     """Test different framework values."""
     frameworks = ['vllm', 'trt', 'sglang', 'tensorrt-llm']
     
@@ -452,28 +253,12 @@ def test_different_frameworks(tmp_path, sample_benchmark_result, basic_env_vars)
         env_vars = basic_env_vars.copy()
         env_vars['FRAMEWORK'] = framework
         
-        result_file = tmp_path / 'test_result.json'
-        with open(result_file, 'w') as f:
-            json.dump(sample_benchmark_result, f)
+        result = process_benchmark_result(sample_benchmark_result, env_vars)
         
-        original_dir = os.getcwd()
-        os.chdir(tmp_path)
-        
-        try:
-            with patch.dict(os.environ, env_vars):
-                exec(open(PROCESS_RESULT_PATH).read())
-            
-            output_file = tmp_path / 'agg_test_result.json'
-            with open(output_file) as f:
-                result = json.load(f)
-            
-            assert result['framework'] == framework
-            
-        finally:
-            os.chdir(original_dir)
+        assert result['framework'] == framework
 
 
-def test_different_precisions(tmp_path, sample_benchmark_result, basic_env_vars):
+def test_different_precisions(sample_benchmark_result, basic_env_vars):
     """Test different precision values."""
     precisions = ['fp8', 'fp16', 'fp32', 'int8', 'int4']
     
@@ -481,28 +266,12 @@ def test_different_precisions(tmp_path, sample_benchmark_result, basic_env_vars)
         env_vars = basic_env_vars.copy()
         env_vars['PRECISION'] = precision
         
-        result_file = tmp_path / 'test_result.json'
-        with open(result_file, 'w') as f:
-            json.dump(sample_benchmark_result, f)
+        result = process_benchmark_result(sample_benchmark_result, env_vars)
         
-        original_dir = os.getcwd()
-        os.chdir(tmp_path)
-        
-        try:
-            with patch.dict(os.environ, env_vars):
-                exec(open(PROCESS_RESULT_PATH).read())
-            
-            output_file = tmp_path / 'agg_test_result.json'
-            with open(output_file) as f:
-                result = json.load(f)
-            
-            assert result['precision'] == precision
-            
-        finally:
-            os.chdir(original_dir)
+        assert result['precision'] == precision
 
 
-def test_throughput_calculations(tmp_path, basic_env_vars):
+def test_throughput_calculations(basic_env_vars):
     """Test throughput calculations with various values."""
     benchmark_result = {
         'max_concurrency': 10,
@@ -516,32 +285,16 @@ def test_throughput_calculations(tmp_path, basic_env_vars):
     env_vars['PREFILL_GPUS'] = '2'
     env_vars['DECODE_GPUS'] = '2'
     
-    result_file = tmp_path / 'test_result.json'
-    with open(result_file, 'w') as f:
-        json.dump(benchmark_result, f)
+    result = process_benchmark_result(benchmark_result, env_vars)
     
-    original_dir = os.getcwd()
-    os.chdir(tmp_path)
+    # tput_per_gpu = total_token_throughput / tp_size
+    assert result['tput_per_gpu'] == 24000.0 / 4
     
-    try:
-        with patch.dict(os.environ, env_vars):
-            exec(open(PROCESS_RESULT_PATH).read())
-        
-        output_file = tmp_path / 'agg_test_result.json'
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        # tput_per_gpu = total_token_throughput / tp_size
-        assert result['tput_per_gpu'] == 24000.0 / 4
-        
-        # output_tput_per_gpu = output_throughput / decode_gpus
-        assert result['output_tput_per_gpu'] == 8000.0 / 2
-        
-        # input_tput_per_gpu = (total_token_throughput - output_throughput) / prefill_gpus
-        assert result['input_tput_per_gpu'] == (24000.0 - 8000.0) / 2
-        
-    finally:
-        os.chdir(original_dir)
+    # output_tput_per_gpu = output_throughput / decode_gpus
+    assert result['output_tput_per_gpu'] == 8000.0 / 2
+    
+    # input_tput_per_gpu = (total_token_throughput - output_throughput) / prefill_gpus
+    assert result['input_tput_per_gpu'] == (24000.0 - 8000.0) / 2
 
 
 if __name__ == "__main__":
