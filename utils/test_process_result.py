@@ -44,46 +44,44 @@ def basic_env_vars():
     }
 
 
-def test_basic_processing(tmp_path, sample_benchmark_result, basic_env_vars):
-    """Test basic processing of benchmark results."""
-    # Create result file
-    result_file = tmp_path / 'test_result.json'
+def run_process_result_script(tmp_path, result_data, env_vars, result_filename='test_result.json'):
+    """Helper to create result file, change directory, execute script, and clean up."""
+    result_file = tmp_path / result_filename
     with open(result_file, 'w') as f:
-        json.dump(sample_benchmark_result, f)
-    
-    # Change to tmp_path directory
+        json.dump(result_data, f)
     original_dir = os.getcwd()
     os.chdir(tmp_path)
-    
     try:
-        with patch.dict(os.environ, basic_env_vars):
-            # Import and execute the script
+        with patch.dict(os.environ, env_vars):
             exec(open(PROCESS_RESULT_PATH).read())
-        
-        # Check output file was created
-        output_file = tmp_path / 'agg_test_result.json'
-        assert output_file.exists()
-        
-        # Load and verify output
-        with open(output_file) as f:
-            result = json.load(f)
-        
-        assert result['hw'] == 'h200'
-        assert result['tp'] == 8
-        assert result['ep'] == 1
-        assert result['dp_attention'] == 'false'
-        assert result['conc'] == 8
-        assert result['model'] == 'meta-llama/Llama-3-70b'
-        assert result['framework'] == 'vllm'
-        assert result['precision'] == 'fp8'
-        assert result['tput_per_gpu'] == 10000.0 / 8
-        assert result['output_tput_per_gpu'] == 3000.0 / 8
-        assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 8
-        
+        output_file = tmp_path / f'agg_{Path(result_filename).stem}.json'
+        return output_file
     finally:
         os.chdir(original_dir)
 
 
+def test_basic_processing(tmp_path, sample_benchmark_result, basic_env_vars):
+    """Test basic processing of benchmark results."""
+    output_file = run_process_result_script(
+        tmp_path,
+        sample_benchmark_result,
+        basic_env_vars,
+        result_filename='test_result.json'
+    )
+    assert output_file.exists()
+    with open(output_file) as f:
+        result = json.load(f)
+    assert result['hw'] == 'h200'
+    assert result['tp'] == 8
+    assert result['ep'] == 1
+    assert result['dp_attention'] == 'false'
+    assert result['conc'] == 8
+    assert result['model'] == 'meta-llama/Llama-3-70b'
+    assert result['framework'] == 'vllm'
+    assert result['precision'] == 'fp8'
+    assert result['tput_per_gpu'] == 10000.0 / 8
+    assert result['output_tput_per_gpu'] == 3000.0 / 8
+    assert result['input_tput_per_gpu'] == (10000.0 - 3000.0) / 8
 def test_ms_to_seconds_conversion(tmp_path, basic_env_vars):
     """Test conversion of millisecond values to seconds."""
     benchmark_result = {
