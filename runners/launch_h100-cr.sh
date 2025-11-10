@@ -60,6 +60,7 @@ if [[ "$RUN_MODE" == "eval" ]]; then
     "$LM_EVAL_IMAGE" \
     -lc 'python3 -m pip install -q --upgrade pip || true; \
          python3 -m pip install -q --no-cache-dir "lm-eval[api]"; \
+         # 0) Solves issue lm-evals #3355
          python3 -m pip install -q --no-cache-dir --no-deps "git+https://github.com/EleutherAI/lm-evaluation-harness.git@main"; \
          # 1) Sanity: /health is GET-able (avoid 405 on POST-only endpoints)
          curl -fsS "$OPENAI_SERVER_BASE/health" >/dev/null || { echo "Health check failed"; exit 1; }; \
@@ -82,6 +83,78 @@ if [[ "$RUN_MODE" == "eval" ]]; then
            --output_path /workspace/${EVAL_RESULT_DIR:-eval_out} \
            --model_args "model=$OPENAI_MODEL_NAME_COMPUTED,base_url=$OPENAI_CHAT_BASE,api_key=$OPENAI_API_KEY,eos_string=</s>,max_retries=3" \
            --gen_kwargs "max_tokens=16384,temperature=0,top_p=1"'
+
+  set +x
+
+  ##############################################################################
+  # Append a Markdown table to the GitHub Actions job summary
+  ##############################################################################
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    RES_DIR="${EVAL_RESULT_DIR:-eval_out}"
+    RES_FILE="$(ls -1t "$RES_DIR"/*.json 2>/dev/null | head -n1)"
+
+    {
+      echo "### GSM8K Evaluation"
+      echo ""
+      if [ -z "$RES_FILE" ]; then
+        echo "> No result JSON found in \`$RES_DIR\`."
+      else
+        # Prefer Python (usually available on self-hosted); fall back to jq if desired
+        if command -v python3 >/dev/null 2>&1; then
+python3 - "$FRAMEWORK" "$PRECISION" "$TP" "$EP_SIZE" "$DP_ATTENTION" "$RES_FILE" <<'PY'
+import sys, json, re, os
+framework, precision, tp, ep, dp, path = sys.argv[1:7]
+with open(path, 'r') as f:
+    data = json.load(f)
+
+pe = data.get("pretty_env_info","")
+gpu_lines = [l for l in pe.splitlines() if l.startswith("GPU ")]
+names = [re.sub(r"GPU \d+:\s*", "", l).strip() for l in gpu_lines]
+from collections import Counter
+c = Counter(names)
+gpu_summary = " + ".join([f"{n}\u00D7 {name}" for name, n in c.items()]) if c else "Unknown GPU"
+cpu_line = next((l.split(":",1)[1].strip() for l in pe.splitlines() if l.startswith("Model name:")), None)
+hardware = gpu_summary + (f" ({cpu_line})" if cpu_line else "")
+
+res = data.get("results",{}).get("gsm8k", {})
+strict = res.get("exact_match,strict-match")
+flex   = res.get("exact_match,flexible-extract")
+strict_se = res.get("exact_match_stderr,strict-match")
+flex_se   = res.get("exact_match_stderr,flexible-extract")
+n_eff = data.get("n-samples",{}).get("gsm8k",{}).get("effective")
+
+def pct(x): return f"{x*100:.2f}%" if isinstance(x,(int,float)) else "N/A"
+def se(x):  return f" \u00B1{(x*100):.2f}%" if isinstance(x,(int,float)) else ""
+
+print("| Hardware | Framework | Precision | TP | EP | DP Attention | EM Strict | EM Flexible | N (eff) |")
+print("|---|---|---:|--:|--:|:--:|--:|--:|--:|")
+print(f"| {hardware} | {framework} | {precision} | {tp} | {ep} | {str(dp).lower()} | {pct(strict)}{se(strict_se)} | {pct(flex)}{se(flex_se)} | {n_eff or ''} |")
+
+model = data.get("model_name") or data.get("configs",{}).get("gsm8k",{}).get("metadata",{}).get("model")
+limit = data.get("config",{}).get("limit")
+fewshot = data.get("n-shot",{}).get("gsm8k")
+lim_str = str(int(limit)) if isinstance(limit,(int,float)) else str(limit)
+print(f"\n_Model_: `{model}` &nbsp;&nbsp; _k-shot_: **{fewshot}** &nbsp;&nbsp; _limit_: **{lim_str}**  \n_Source_: `{os.path.basename(path)}`")
+PY
+        else
+          # Minimal jq fallback (prints only metrics without hardware/CPU inference)
+          jq -r --arg fw "$FRAMEWORK" --arg prec "$PRECISION" --arg tp "$TP" --arg ep "$EP_SIZE" --arg dp "$DP_ATTENTION" '
+            def pct: (. * 100 | tostring) + "%";
+            . as $root
+            | "| Hardware | Framework | Precision | TP | EP | DP Attention | EM Strict | EM Flexible | N (eff) |",
+              "|---|---|---:|--:|--:|:--:|--:|--:|--:|",
+              ("| Unknown GPU | \($fw) | \($prec) | \($tp) | \($ep) | \($dp) | "
+               + (.results.gsm8k["exact_match,strict-match"]    | pct) + " | "
+               + (.results.gsm8k["exact_match,flexible-extract"]| pct) + " | "
+               + (.["n-samples"].gsm8k.effective|tostring) + " |")
+          ' "$RES_FILE"
+        fi
+      fi
+      echo ""
+    } >> "$GITHUB_STEP_SUMMARY" || true
+  fi
+  ##############################################################################
+
 else
     # Benchmark mode: original throughput client
     git clone https://github.com/kimbochen/bench_serving.git
