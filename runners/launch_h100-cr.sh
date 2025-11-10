@@ -32,29 +32,29 @@ if ! docker ps --format "{{.Names}}" | grep -q "$server_name"; then
 fi
 
 if [[ "$RUN_MODE" == "eval" ]]; then
-    # Eval mode: run lm-eval against the OpenAI-compatible vLLM endpoint
-    mkdir -p "${EVAL_RESULT_DIR:-eval_out}"
-    # Allow overriding the OpenAI model name if the served name differs from HF repo id.
-    # Defaults to the trailing component (e.g., 'openai/gpt-oss-120b' -> 'gpt-oss-120b').
-    OPENAI_MODEL_NAME_COMPUTED="${OPENAI_MODEL_NAME:-${MODEL##*/}}"
-    # Allow overriding the client image used for lm-eval. Default to reuse server image to avoid pulling extras.
-    LM_EVAL_IMAGE="${LM_EVAL_IMAGE:-$IMAGE}"
-    set -x
-    docker run --rm --network=host --name=$client_name \
-    -v $GITHUB_WORKSPACE:/workspace/ -w /workspace/ \
+  mkdir -p "${EVAL_RESULT_DIR:-eval_out}"
+  OPENAI_MODEL_NAME_COMPUTED="${OPENAI_MODEL_NAME:-${MODEL##*/}}"
+  LM_EVAL_IMAGE="${LM_EVAL_IMAGE:-$IMAGE}"
+
+  set -x
+  docker run --rm --network=host --name=$client_name \
+    -v "$GITHUB_WORKSPACE:/workspace/" -w /workspace/ \
+    -e OPENAI_API_KEY=EMPTY \
+    -e OPENAI_BASE_URL="http://localhost:${PORT:-8888}/v1" \
     --entrypoint=/bin/bash \
-    $LM_EVAL_IMAGE \
-    -lc "export PIP_NO_CACHE_DIR=1; \
-         (python3 -m pip install -q --upgrade pip || true); \
-         python3 -m pip install -q --no-cache-dir 'lm-eval[api]' && \
-         python3 -m lm_eval --model openai-chat-completions \
-                --tasks ${EVAL_TASK:-gsm8k} \
-                --apply_chat_template \
-                --num_fewshot ${NUM_FEWSHOT:-5} \
-                --limit ${LIMIT:-200} \
-                --batch_size auto \
-                --output_path /workspace/${EVAL_RESULT_DIR:-eval_out} \
-                --model_args model=${OPENAI_MODEL_NAME_COMPUTED},api_base=http://localhost:${PORT:-8888},api_key=EMPTY,temperature=0.0"
+    "$LM_EVAL_IMAGE" \
+    -lc "python3 -m pip install -q --upgrade pip || true; \
+         python3 -m pip install -q --no-cache-dir 'lm-eval[api]'; \
+         # sanity: confirm server is reachable & model is listed
+         (curl -s \$OPENAI_BASE_URL/models | head -c 200 || true); \
+         python3 -m lm_eval --model local-chat-completions \
+           --tasks \${EVAL_TASK:-gsm8k} \
+           --apply_chat_template \
+           --num_fewshot \${NUM_FEWSHOT:-5} \
+           --limit \${LIMIT:-200} \
+           --batch_size auto \
+           --output_path /workspace/\${EVAL_RESULT_DIR:-eval_out} \
+           --model_args model=\${OPENAI_MODEL_NAME_COMPUTED},base_url=\$OPENAI_BASE_URL,api_key=\$OPENAI_API_KEY,temperature=0.0"
 else
     # Benchmark mode: original throughput client
     git clone https://github.com/kimbochen/bench_serving.git
