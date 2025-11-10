@@ -8,6 +8,16 @@ client_name="bmk-client"
 RUN_MODE="${RUN_MODE:-benchmark}"
 
 set -x
+## Pre-clean any leftover containers to avoid name conflicts
+if docker ps -a --format '{{.Names}}' | grep -Fxq "$server_name"; then
+  echo "Found existing container $server_name; removing..."
+  docker rm -f "$server_name" || true
+fi
+if docker ps -a --format '{{.Names}}' | grep -Fxq "$client_name"; then
+  echo "Found existing container $client_name; removing..."
+  docker rm -f "$client_name" || true
+fi
+
 docker run --rm -d --network=host --name=$server_name \
 --runtime=nvidia --gpus=all --ipc=host --privileged --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 \
 -v $HF_HUB_CACHE_MOUNT:$HF_HUB_CACHE \
