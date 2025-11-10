@@ -18,23 +18,6 @@ if docker ps -a --format '{{.Names}}' | grep -Fxq "$client_name"; then
   docker rm -f "$client_name" || true
 fi
 
-if [ "${PRE_CLEAN_WORKSPACE:-1}" = "1" ] && [ -n "${GITHUB_WORKSPACE:-}" ] && [ -d "$GITHUB_WORKSPACE" ]; then
-  echo "Pre-cleaning workspace artifacts under $GITHUB_WORKSPACE"
-  # Allow override of paths; default cleans eval outputs
-  CLEAN_PATHS="${CLEAN_PATHS:-/workspace/${EVAL_RESULT_DIR:-eval_out}}"
-  # Use the same $IMAGE to avoid extra pulls; requires bash inside image
-  docker run --rm --network=host --name="${client_name}-preclean" \
-    -v "$GITHUB_WORKSPACE:/workspace" \
-    --entrypoint=/bin/bash \
-    "$IMAGE" \
-    -lc 'set -euo pipefail; \
-         shopt -s nullglob || true; \
-         for p in '"$CLEAN_PATHS"'; do \
-           echo "Cleaning $p if exists"; \
-           if [ -e "$p" ]; then chmod -R u+w "$p" 2>/dev/null || true; rm -rf "$p" || true; fi; \
-         done' || true
-fi
-
 docker run --rm -d --network=host --name=$server_name \
 --runtime=nvidia --gpus=all --ipc=host --privileged --shm-size=16g --ulimit memlock=-1 --ulimit stack=67108864 \
 -v $HF_HUB_CACHE_MOUNT:$HF_HUB_CACHE \
@@ -111,19 +94,20 @@ if [[ "$RUN_MODE" == "eval" ]]; then
   ##############################################################################
   if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     RES_DIR="${EVAL_RESULT_DIR:-eval_out}"
-    RES_FILE="$(ls -1t "$RES_DIR"/*.json 2>/dev/null | head -n1)"
+    # Find the most recent JSON anywhere under RES_DIR (handles nested outputs)
+    RES_FILE="$(find "$RES_DIR" -type f -name '*.json' -print0 2>/dev/null | xargs -0 ls -1t 2>/dev/null | head -n1)"
 
     {
-      echo "### GSM8K Evaluation"
+      echo "### ${EVAL_TASK:-gsm8k} Evaluation"
       echo ""
       if [ -z "$RES_FILE" ]; then
         echo "> No result JSON found in \`$RES_DIR\`."
       else
         # Prefer Python (usually available on self-hosted); fall back to jq if desired
         if command -v python3 >/dev/null 2>&1; then
-python3 - "$FRAMEWORK" "$PRECISION" "$TP" "$EP_SIZE" "$DP_ATTENTION" "$RES_FILE" <<'PY'
+python3 - "$FRAMEWORK" "$PRECISION" "$TP" "$EP_SIZE" "$DP_ATTENTION" "${EVAL_TASK:-gsm8k}" "$RES_FILE" <<'PY'
 import sys, json, re, os
-framework, precision, tp, ep, dp, path = sys.argv[1:7]
+framework, precision, tp, ep, dp, task, path = sys.argv[1:8]
 with open(path, 'r') as f:
     data = json.load(f)
 
@@ -136,7 +120,13 @@ gpu_summary = " + ".join([f"{n}\u00D7 {name}" for name, n in c.items()]) if c el
 cpu_line = next((l.split(":",1)[1].strip() for l in pe.splitlines() if l.startswith("Model name:")), None)
 hardware = gpu_summary + (f" ({cpu_line})" if cpu_line else "")
 
-res = data.get("results",{}).get("gsm8k", {})
+task_key = task
+# Fallback: if provided task missing, try first available key
+res_all = data.get("results", {}) or {}
+res = res_all.get(task_key) if isinstance(res_all, dict) else {}
+if not res and isinstance(res_all, dict) and res_all:
+    task_key = next(iter(res_all.keys()))
+    res = res_all.get(task_key, {})
 strict = res.get("exact_match,strict-match")
 flex   = res.get("exact_match,flexible-extract")
 strict_se = res.get("exact_match_stderr,strict-match")
@@ -150,9 +140,9 @@ print("| Hardware | Framework | Precision | TP | EP | DP Attention | EM Strict |
 print("|---|---|---:|--:|--:|:--:|--:|--:|--:|")
 print(f"| {hardware} | {framework} | {precision} | {tp} | {ep} | {str(dp).lower()} | {pct(strict)}{se(strict_se)} | {pct(flex)}{se(flex_se)} | {n_eff or ''} |")
 
-model = data.get("model_name") or data.get("configs",{}).get("gsm8k",{}).get("metadata",{}).get("model")
+model = data.get("model_name") or data.get("configs",{}).get(task_key,{}).get("metadata",{}).get("model")
 limit = data.get("config",{}).get("limit")
-fewshot = data.get("n-shot",{}).get("gsm8k")
+fewshot = data.get("n-shot",{}).get(task_key)
 lim_str = str(int(limit)) if isinstance(limit,(int,float)) else str(limit)
 print(f"\n_Model_: `{model}` &nbsp;&nbsp; _k-shot_: **{fewshot}** &nbsp;&nbsp; _limit_: **{lim_str}**  \n_Source_: `{os.path.basename(path)}`")
 PY
