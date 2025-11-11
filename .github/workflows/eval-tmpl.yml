@@ -65,7 +65,7 @@ env:
   LIMIT: ${{ inputs.limit }}
   EVAL_RESULT_DIR: eval_out
   # Server-side concurrency default (used by some server scripts)
-  CONC: '4'
+  CONC: '32'
 
 jobs:
   eval:

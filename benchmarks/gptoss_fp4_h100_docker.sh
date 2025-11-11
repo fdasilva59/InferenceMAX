@@ -102,7 +102,7 @@ if [[ "$RUN_MODE" == "eval" ]]; then
     --limit 1300 \
     --batch_size 8 \
     --output_path "/workspace/${EVAL_RESULT_DIR}" \
-    --model_args "model=$MODEL,base_url=$OPENAI_COMP_BASE,api_key=$OPENAI_API_KEY,eos_string=</s>,max_retries=3,num_concurrent=32" \
+    --model_args "model=$MODEL,base_url=$OPENAI_CHAT_BASE,api_key=$OPENAI_API_KEY,eos_string=</s>,max_retries=3,num_concurrent=32" \
     --gen_kwargs "max_tokens=4096,temperature=0,top_p=1"
   set +x
 
