@@ -96,14 +96,23 @@ if [[ "$RUN_MODE" == "eval" ]]; then
   mkdir -p "/workspace/${EVAL_RESULT_DIR}"
 
   set -x
+  PATCH_DIR=$(mktemp -d)
+cat > "$PATCH_DIR/sitecustomize.py" <<'PY'
+import lm_eval.filters.extraction as ex
+_orig = ex.ExtractFilter.apply
+def _safe_apply(self, resps, docs):
+    resps = [r if isinstance(r, str) else "" for r in resps]
+    return _orig(self, resps, docs)
+ex.ExtractFilter.apply = _safe_apply
+PY
+  PYTHONPATH="$PATCH_DIR:$PYTHONPATH" \
   python3 -m lm_eval --model local-chat-completions --apply_chat_template \
     --tasks ${EVAL_TASK:-gsm8k} \
     --num_fewshot ${NUM_FEWSHOT:-5} \
-    --limit 1300 \
-    --batch_size 8 \
+    --batch_size 2 \
     --output_path "/workspace/${EVAL_RESULT_DIR}" \
     --model_args "model=$MODEL,base_url=$OPENAI_CHAT_BASE,api_key=$OPENAI_API_KEY,eos_string=</s>,max_retries=3,num_concurrent=32" \
-    --gen_kwargs "max_tokens=4096,temperature=0,top_p=1"
+    --gen_kwargs "max_tokens=32768,temperature=0,top_p=1"
   set +x
 
   # Append a Markdown table to the GitHub Actions job summary using helper in bench_serving
