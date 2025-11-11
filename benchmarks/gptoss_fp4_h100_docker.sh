@@ -82,40 +82,19 @@ if [[ "$RUN_MODE" == "eval" ]]; then
   python3 -m pip install -q --no-cache-dir "lm-eval[api]" || true
   # Temporary: workaround known harness issue
   python3 -m pip install -q --no-cache-dir --no-deps "git+https://github.com/EleutherAI/lm-evaluation-harness.git@main" || true
-
-  # Basic health check
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsS "$OPENAI_SERVER_BASE/health" >/dev/null || { echo "Health check failed"; exit 1; }
-  else
-    python3 - "$OPENAI_SERVER_BASE/health" <<'PY' || exit 1
-import sys, urllib.request
-try:
-    with urllib.request.urlopen(sys.argv[1], timeout=5) as r:
-        pass
-except Exception as e:
-    print("Health check failed:", e)
-    sys.exit(1)
-PY
   fi
 
   echo "Using model: $MODEL"
-
-  # Optional: quick POST to chat endpoint
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsS -X POST "$OPENAI_CHAT_BASE" -H "Content-Type: application/json" \
-      -d "{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":1}" >/dev/null || { echo "Chat POST failed"; exit 1; }
-  fi
 
   set -x
   python3 -m lm_eval --model local-chat-completions \
     --tasks ${EVAL_TASK:-gsm8k} \
     --apply_chat_template \
     --num_fewshot ${NUM_FEWSHOT:-5} \
-    --limit ${LIMIT:-200} \
-    --batch_size 1 \
+    --batch_size 4 \
     --output_path "/workspace/${EVAL_RESULT_DIR}" \
-    --model_args "model=$MODEL,base_url=$OPENAI_CHAT_BASE,api_key=$OPENAI_API_KEY,eos_string=</s>,max_retries=3" \
-    --gen_kwargs "max_tokens=16384,temperature=0,top_p=1"
+    --model_args "model=$MODEL,base_url=$OPENAI_CHAT_BASE,api_key=$OPENAI_API_KEY,eos_string=</s>,max_retries=3,num_concurrent=4" \
+    --gen_kwargs "max_tokens=8192,temperature=0,top_p=1"
   set +x
 
   # Append a Markdown table to the GitHub Actions job summary

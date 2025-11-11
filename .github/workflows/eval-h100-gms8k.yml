@@ -38,6 +38,7 @@ on:
       - '.github/workflows/eval-h100-gms8k.yml'
       - '.github/workflows/eval-tmpl.yml'
       - 'runners/launch_h100-cr.sh'
+      - 'benchmarks/gptoss_fp4_h100_docker.sh'
 
 jobs:
   eval:
