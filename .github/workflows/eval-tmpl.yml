@@ -105,11 +105,6 @@ jobs:
             done
           fi
 
-      - name: Nuke with sudo (pre-checkout)
-        run: |
-          sudo ls -lah "${GITHUB_WORKSPACE}" || true
-          sudo rm -rf "/home/ubuntu/actions-runner-1/_work/InferenceMAX/InferenceMAX/eval_out" || true
-
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
