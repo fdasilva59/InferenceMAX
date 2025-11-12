@@ -15,6 +15,7 @@ fi
 docker run --rm --network=host \
   --runtime=nvidia --gpus=all --ipc=host --privileged --shm-size=16g \
   --ulimit memlock=-1 --ulimit stack=67108864 \
+  --user "$(id -u):$(id -g)"
   -v "$HF_HUB_CACHE_MOUNT:$HF_HUB_CACHE" \
   -v "$GITHUB_WORKSPACE:/workspace/" -w /workspace/ \
   $SUMMARY_MOUNT \
