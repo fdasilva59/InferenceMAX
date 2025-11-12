@@ -15,17 +15,10 @@ fi
 docker run --rm --network=host \
   --runtime=nvidia --gpus=all --ipc=host --privileged --shm-size=16g \
   --ulimit memlock=-1 --ulimit stack=67108864 \
-  --user "$(id -u):$(id -g)" \
+  -v "$HF_HUB_CACHE_MOUNT:$HF_HUB_CACHE" \
   -v "$GITHUB_WORKSPACE:/workspace/" -w /workspace/ \
   $SUMMARY_MOUNT \
-  -e HF_HOME=/workspace/.cache/huggingface \
-  -e HF_HUB_CACHE=/workspace/.cache/huggingface/hub \
-  -e HF_DATASETS_CACHE=/workspace/.cache/huggingface/datasets \
-  -e USER=runner -e LOGNAME=runner -e HOME=/workspace \
-  -e XDG_CACHE_HOME=/workspace/.cache \
-  -e TORCHINDUCTOR_CACHE_DIR=/workspace/.cache/torch/inductor \
-  -e TRITON_CACHE_DIR=/workspace/.cache/torch/triton \
-  -e HF_TOKEN -e MODEL -e TP -e CONC -e MAX_MODEL_LEN -e ISL -e OSL \
+  -e HF_TOKEN -e HF_HUB_CACHE -e MODEL -e TP -e CONC -e MAX_MODEL_LEN -e ISL -e OSL \
   -e RANDOM_RANGE_RATIO -e RESULT_FILENAME -e PORT="$PORT" -e GITHUB_STEP_SUMMARY \
   -e RUN_MODE -e EVAL_TASK -e NUM_FEWSHOT -e LIMIT -e EVAL_RESULT_DIR \
   -e FRAMEWORK -e PRECISION -e EP_SIZE -e DP_ATTENTION -e OPENAI_MODEL_NAME \
