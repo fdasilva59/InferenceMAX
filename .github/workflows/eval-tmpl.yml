@@ -105,6 +105,10 @@ jobs:
             done
           fi
 
+      - name: cleanup
+        run: |
+          sudo pkill vllm
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
