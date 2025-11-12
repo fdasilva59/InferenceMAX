@@ -76,24 +76,30 @@ curl -s "http://0.0.0.0:${PORT}/v1/models"
 if [[ "$RUN_MODE" == "eval" ]]; then
   EVAL_RESULT_DIR=${EVAL_RESULT_DIR:-eval_out}
   OPENAI_SERVER_BASE="http://0.0.0.0:${PORT}"
+  OPENAI_CHAT_BASE="$OPENAI_SERVER_BASE/v1/chat/completions"
   export OPENAI_API_KEY=${OPENAI_API_KEY:-EMPTY}
 
-  # Install LightEval + LiteLLM (unchanged)
+  # --- Install LightEval (no lm-eval; no sitecustomize patch needed) ---
   python3 -m pip install -q --upgrade pip || true
-  python3 -m pip install -q --no-cache-dir lighteval litellm || true
+  python3 -m pip install -q --no-cache-dir "lighteval" || true
 
-  TASK_SPEC="${EVAL_TASK:-gsm8k}|${NUM_FEWSHOT:-5}"
+  echo "Using model: ${MODEL}"
+
+  # Task spec: encode few-shot as gsm8k|k (default k=5)
+  TASK_BASE="${EVAL_TASK:-gsm8k}"
+  FEWSHOT="${NUM_FEWSHOT:-5}"
+  TASK_SPEC="${TASK_BASE}|${FEWSHOT}"
+  MODEL_ID="${OPENAI_MODEL_NAME:-$MODEL}"
+  MODEL_ARGS="provider=openai,model_name=${MODEL_ID},base_url=http://0.0.0.0:${PORT}/v1,api_key=${OPENAI_API_KEY}"
 
   set -x
   lighteval endpoint litellm \
-    "provider=openai,model_name=gpt-oss-120b,base_url=${OPENAI_SERVER_BASE}/v1/chat/completions,api_key=${OPENAI_API_KEY}" \
+    "${MODEL_ARGS},generation_parameters=${GEN_ARGS}" \
     "${TASK_SPEC}" \
-    --output-dir "/workspace/${EVAL_RESULT_DIR}"
+    --output-dir "/workspace/${EVAL_RESULT_DIR}" \
+    --max-samples "${LIMIT:-0}" \
+    --remove-reasoning-tags
   set +x
-
-  echo "Evaluation completed. Results in /workspace/${EVAL_RESULT_DIR}"
-  exit 0
-
 else
 
   # Default values for optional vars used by the benchmark
