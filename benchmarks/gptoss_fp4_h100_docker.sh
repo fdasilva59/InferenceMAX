@@ -92,7 +92,7 @@ model_parameters:
   model_name: "${MODEL}"
   base_url: "${OPENAI_SERVER_BASE}/v1"
   api_key: "${OPENAI_API_KEY}"
-  parallel_calls_count: 16
+  concurrent_requests: 16
   # Optional: system_prompt: "You are a helpful math assistant."
   generation_parameters:
     temperature: 0.0
