@@ -75,6 +75,7 @@ if [[ "$RUN_MODE" == "eval" ]]; then
   mkdir -p "/workspace/${EVAL_RESULT_DIR}"
   OPENAI_SERVER_BASE="http://0.0.0.0:${PORT}"
   export OPENAI_API_KEY=${OPENAI_API_KEY:-EMPTY}
+  export PATH="$HOME/.local/bin:$PATH"
 
   # --- Install Lighteval with LiteLLM backend ---
   python3 -m pip install -q --upgrade pip || true
@@ -98,9 +99,6 @@ model_parameters:
     top_p: 1.0
     max_new_tokens: 8192
 YAML
-
-  # --- Clean any previous results ---
-  rm -rf "/workspace/${EVAL_RESULT_DIR:?}/"* 2>/dev/null || true
 
   # --- Run Lighteval on the requested task ---
   # Task spec format: {suite}|{task}|{num_few_shot}|{truncate_ok}
