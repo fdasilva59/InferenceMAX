@@ -88,7 +88,6 @@ if [[ "$RUN_MODE" == "eval" ]]; then
   lighteval endpoint litellm \
     "provider=openai,model_name=gpt-oss-120b,base_url=${OPENAI_SERVER_BASE}/v1/chat/completions,api_key=${OPENAI_API_KEY}" \
     "${TASK_SPEC}" \
-    --use-chat-template \
     --output-dir "/workspace/${EVAL_RESULT_DIR}"
   set +x
 
