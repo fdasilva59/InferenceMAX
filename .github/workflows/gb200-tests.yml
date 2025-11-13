@@ -60,6 +60,7 @@ jobs:
         runs-on: ubuntu-latest
         outputs:
             max-model-len: ${{ steps.calc.outputs.max-model-len }}
+            model-prefix: ${{ steps.calc.outputs.model-prefix }}
         steps:
             - id: calc
               shell: python
@@ -72,8 +73,22 @@ jobs:
                   except ValueError:
                       print("Error: ISL and OSL must be integers")
                       sys.exit(1)
+                  
+                  # Map model names to clean prefixes
+                  model = "${{ inputs.model }}"
+                  if model == "deepseek-ai/DeepSeek-R1-0528":
+                      model_prefix = "dsr1"
+                  elif model == "deepseek-r1-fp4":
+                      model_prefix = "dsr1-fp4"
+                  elif model == "openai/gpt-oss-120b":
+                      model_prefix = "gptoss"
+                  else:
+                      # Fallback: replace slashes with underscores
+                      model_prefix = model.replace("/", "_")
+                  
                   with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
                       f.write(f"max-model-len={isl + osl}\n")
+                      f.write(f"model-prefix={model_prefix}\n")
 
     benchmark-gb200:
         needs: pre-run
@@ -86,7 +101,7 @@ jobs:
             model: ${{ inputs.model }}
             framework: ${{ inputs.framework }}
             precision: ${{ inputs.precision }}
-            exp-name: ${{ inputs.model }}_${{ inputs.isl }}/${{ inputs.osl }}
+            exp-name: ${{ needs.pre-run.outputs.model-prefix }}
             isl: ${{ inputs.isl }}
             osl: ${{ inputs.osl }}
             max-model-len: ${{ needs.pre-run.outputs.max-model-len }}

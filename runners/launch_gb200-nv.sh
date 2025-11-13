@@ -277,7 +277,8 @@ if [[ $FRAMEWORK == "dynamo-trtllm" ]]; then
                     # Extract concurrency and GPU count from filename
                     filename=$(basename "$result_file")
                     concurrency=$(echo "$filename" | sed 's/results_concurrency_\([0-9]*\)_gpus_.*\.json/\1/')
-                    gpus=$(echo "$filename" | sed 's/results_concurrency_.*_gpus_\([0-9]*\)\.json/\1/')
+                    #gpus=$(echo "$filename" | sed 's/results_concurrency_.*_gpus_\([0-9]*\)\.json/\1/')
+                    gpus=$(echo "$result_file" | sed -n "s/.*_gpus_\([0-9]*\).*\.json/\1/p")
                     echo "Processing concurrency $concurrency with $gpus GPUs: $result_file"
 
                     # Copy the result file to workspace with a unique name
