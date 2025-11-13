@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# === Required Env Vars === 
+# === Required Env Vars ===
 # HF_TOKEN
 # HF_HUB_CACHE
 # IMAGE
@@ -16,27 +16,63 @@
 # DP_ATTENTION
 # EP_SIZE
 
-# GPTOSS TRTLLM Deployment Guide:
-# https://github.com/NVIDIA/TensorRT-LLM/blob/main/docs/source/deployment-guide/quick-start-recipe-for-gpt-oss-on-trtllm.md
+set -euo pipefail
 
-echo "JOB $SLURM_JOB_ID running on $SLURMD_NODENAME"
+# Pretty trace with timestamps
+export PS4='+ $(date "+%Y-%m-%dT%H:%M:%S") ${BASH_SOURCE}:${LINENO}: '
+set -x
 
-echo "TP: $TP, CONC: $CONC, ISL: $ISL, OSL: $OSL, EP_SIZE: $EP_SIZE, DP_ATTENTION: $DP_ATTENTION"
+echo "[DIAG] JOB=${SLURM_JOB_ID:-N/A} NODE=${SLURMD_NODENAME:-N/A}"
 
-hf download $MODEL
+echo "[DIAG] Env snapshot:"
+echo "  MODEL         = ${MODEL:-<unset>}"
+echo "  IMAGE         = ${IMAGE:-<unset>}"
+echo "  HF_HUB_CACHE  = ${HF_HUB_CACHE:-<unset>}"
+echo "  TP            = ${TP:-<unset>}"
+echo "  CONC          = ${CONC:-<unset>}"
+echo "  ISL           = ${ISL:-<unset>}"
+echo "  OSL           = ${OSL:-<unset>}"
+echo "  EP_SIZE       = ${EP_SIZE:-<unset>}"
+echo "  DP_ATTENTION  = ${DP_ATTENTION:-<unset>}"
+echo "  PORT_OFFSET   = ${PORT_OFFSET:-<unset>}"
+echo "  RUN_MODE      = ${RUN_MODE:-benchmark}"
+echo "  EVAL_TASK     = ${EVAL_TASK:-gsm8k}"
+echo "  NUM_FEWSHOT   = ${NUM_FEWSHOT:-5}"
+echo "  LIMIT         = ${LIMIT:-200}"
+
+# Basic required-env check (soft)
+REQUIRED_VARS=(MODEL TP CONC PORT_OFFSET EP_SIZE MAX_MODEL_LEN)
+for v in "${REQUIRED_VARS[@]}"; do
+  if [[ -z "${!v:-}" ]]; then
+    echo "[WARN] Env var '$v' is unset"
+  fi
+done
+
+# Quick system snapshot
+echo "[DIAG] Working directory: $(pwd)"
+echo "[DIAG] Directory listing:"
+ls -al
+echo "[DIAG] GPU info:"
+nvidia-smi || echo "[WARN] nvidia-smi failed"
+
+# Download model (HF)
+echo "[DIAG] Downloading model via 'hf download'"
+hf download "$MODEL"
+
 SERVER_LOG=$(mktemp /tmp/server-XXXXXX.log)
-PORT=$(( 8888 + $PORT_OFFSET ))
+PORT=$(( 8888 + PORT_OFFSET ))
+echo "[DIAG] TRT-LLM server log: $SERVER_LOG"
+echo "[DIAG] Using port: $PORT"
 
-# ========= Determine DP_ATTENTION, EP_SIZE and MOE_BACKEND based on ISL, OSL, CONC =========
+# ========= Determine MOE_BACKEND etc. =========
 MOE_BACKEND="TRTLLM"
-
-echo "MOE_BACKEND set to '$MOE_BACKEND'"
+echo "[DIAG] MOE_BACKEND set to '$MOE_BACKEND'"
 
 EXTRA_CONFIG_FILE="gptoss-fp4.yml"
 export TRTLLM_ENABLE_PDL=1
 export NCCL_GRAPH_REGISTER=0
 
-cat > $EXTRA_CONFIG_FILE << EOF
+cat > "$EXTRA_CONFIG_FILE" << EOF
 cuda_graph_config:
     enable_padding: true
     max_batch_size: $CONC
@@ -52,54 +88,101 @@ moe_config:
     backend: $MOE_BACKEND
 EOF
 
-if [[ "$DP_ATTENTION" == "true" ]]; then
-    cat << EOF >> $EXTRA_CONFIG_FILE
+if [[ "${DP_ATTENTION:-false}" == "true" ]]; then
+    cat << EOF >> "$EXTRA_CONFIG_FILE"
 attention_dp_config:
     enable_balance: true
 EOF
 fi
 
-echo "Generated config file contents:"
-cat $EXTRA_CONFIG_FILE
-
-set -x
+echo "[DIAG] Generated TRTLLM extra config:"
+cat "$EXTRA_CONFIG_FILE"
 
 MAX_NUM_TOKENS=20000
 
+# Trap to always dump last server logs on exit
+dump_logs() {
+  set +e
+  echo "[DIAG] ===== TRTLLM SERVER LOG (tail) ====="
+  tail -n 120 "$SERVER_LOG" || true
+  echo "[DIAG] ====================================="
+}
+trap dump_logs EXIT
+
 # Launch TRT-LLM server
+echo "[DIAG] Starting trtllm-serve..."
 mpirun -n 1 --oversubscribe --allow-run-as-root \
-    trtllm-serve $MODEL --port=$PORT \
+  trtllm-serve "$MODEL" --port="$PORT" \
     --trust_remote_code \
     --backend=pytorch \
     --max_batch_size 512 \
-    --max_seq_len=$MAX_MODEL_LEN \
-    --max_num_tokens=$MAX_NUM_TOKENS \
-    --tp_size=$TP --ep_size=$EP_SIZE \
-    --extra_llm_api_options=$EXTRA_CONFIG_FILE \
-    > $SERVER_LOG 2>&1 &
-
+    --max_seq_len="$MAX_MODEL_LEN" \
+    --max_num_tokens="$MAX_NUM_TOKENS" \
+    --tp_size="$TP" --ep_size="$EP_SIZE" \
+    --extra_llm_api_options="$EXTRA_CONFIG_FILE" \
+    > "$SERVER_LOG" 2>&1 &
 
 set +x
+echo "[DIAG] Waiting for 'Application startup complete' in server log..."
 while IFS= read -r line; do
     printf '%s\n' "$line"
     if [[ "$line" == *"Application startup complete"* ]]; then
+        echo "[DIAG] TRT-LLM reports: Application startup complete"
         break
     fi
 done < <(tail -F -n0 "$SERVER_LOG")
+set -x
+
+# Basic health check
+OPENAI_SERVER_BASE="http://0.0.0.0:${PORT}"
+echo "[DIAG] Health check: ${OPENAI_SERVER_BASE}/health"
+if ! curl -fsS "${OPENAI_SERVER_BASE}/health"; then
+  echo "[ERROR] TRT-LLM /health check failed"
+  exit 1
+fi
+
+# Small direct completion smoke-test
+MODEL_ID="$MODEL"
+echo "[DIAG] Test completion via /v1/completions"
+TEST_PAYLOAD=$(cat << JSON
+{
+  "model": "${MODEL_ID}",
+  "prompt": "Question: 1+1=?\\nAnswer:",
+  "max_tokens": 16,
+  "temperature": 0,
+  "top_p": 1
+}
+JSON
+)
+
+echo "[DIAG] /v1/completions request payload:"
+printf '%s\n' "$TEST_PAYLOAD"
+
+echo "[DIAG] /v1/completions response:"
+if ! curl -sS -D - -H "Content-Type: application/json" \
+  -X POST "${OPENAI_SERVER_BASE}/v1/completions" \
+  -d "$TEST_PAYLOAD"; then
+  echo "[ERROR] Test completion call failed; aborting eval/benchmark."
+  exit 1
+fi
 
 # Choose mode: eval (lm-eval) or benchmark (random throughput)
 RUN_MODE=${RUN_MODE:-benchmark}
+echo "[DIAG] RUN_MODE=$RUN_MODE"
 
 if [[ "$RUN_MODE" == "eval" ]]; then
   EVAL_RESULT_DIR=${EVAL_RESULT_DIR:-eval_out}
-  OPENAI_SERVER_BASE="http://0.0.0.0:${PORT}"
   OPENAI_COMP_BASE="$OPENAI_SERVER_BASE/v1/completions"
-  OPENAI_CHAT_BASE="$OPENAI_SERVER_BASE/v1/chat/completions"
+  OPENAI_CHAT_BASE="$OPENAI_SERVER_BASE/v1/chat/completions"  # kept for logging but not used
   export OPENAI_API_KEY=${OPENAI_API_KEY:-EMPTY}
+
+  echo "[DIAG] Eval mode selected. Results dir: /workspace/${EVAL_RESULT_DIR}"
+  echo "[DIAG] OPENAI_COMP_BASE=$OPENAI_COMP_BASE"
 
   # Ensure bench_serving is present (helper for markdown summary)
   git config --global --add safe.directory /workspace || true
   if [[ ! -d bench_serving ]]; then
+    echo "[DIAG] Cloning bench_serving..."
     git clone https://github.com/oseltamivir/bench_serving.git
   fi
 
@@ -111,7 +194,7 @@ if [[ "$RUN_MODE" == "eval" ]]; then
 
   # Patch harness filters for robust extraction (in-memory via sitecustomize)
   PATCH_DIR="$(mktemp -d)"
-cat > "$PATCH_DIR/sitecustomize.py" <<'PY'
+  cat > "$PATCH_DIR/sitecustomize.py" << 'PY'
 import re, sys, unicodedata
 from lm_eval.filters import extraction as ex
 
@@ -206,26 +289,40 @@ ex.MultiChoiceRegexFilter.apply = _safe_mc_apply
 PY
 
   export PYTHONPATH="${PATCH_DIR}:${PYTHONPATH:-}"
-  set -x
+
+  # Optional small smoke run before full eval
+  EVAL_SMOKE_LIMIT=${EVAL_SMOKE_LIMIT:-2}
+  if [[ "$EVAL_SMOKE_LIMIT" -gt 0 ]]; then
+    echo "[DIAG] Running lm_eval smoke test (limit=${EVAL_SMOKE_LIMIT}, num_concurrent=1, max_tokens=64)..."
+    python3 -m lm_eval --model local-completions \
+      --tasks "${EVAL_TASK:-gsm8k}" \
+      --num_fewshot "${NUM_FEWSHOT:-5}" \
+      --batch_size 1 \
+      --limit "$EVAL_SMOKE_LIMIT" \
+      --output_path "/workspace/${EVAL_RESULT_DIR}_smoke" \
+      --model_args "model=$MODEL,base_url=$OPENAI_COMP_BASE,api_key=$OPENAI_API_KEY,max_retries=1,num_concurrent=1,timeout=120,tokenized_requests=False" \
+      --gen_kwargs "max_tokens=64,temperature=0,top_p=1"
+  fi
+
+  echo "[DIAG] Running full lm_eval (limit=${LIMIT:-200}, num_concurrent=4, max_tokens=1024)..."
   python3 -m lm_eval --model local-completions \
-    --tasks ${EVAL_TASK:-gsm8k} \
-    --num_fewshot ${NUM_FEWSHOT:-5} \
+    --tasks "${EVAL_TASK:-gsm8k}" \
+    --num_fewshot "${NUM_FEWSHOT:-5}" \
     --batch_size 1 \
-    --limit ${LIMIT:-200} \
+    --limit "${LIMIT:-200}" \
     --output_path "/workspace/${EVAL_RESULT_DIR}" \
     --model_args "model=$MODEL,base_url=$OPENAI_COMP_BASE,api_key=$OPENAI_API_KEY,max_retries=3,num_concurrent=4,timeout=600,tokenized_requests=False" \
     --gen_kwargs "max_tokens=1024,temperature=0,top_p=1"
-    RC=$?
-  set +x
+  RC=$?
 
-    if [[ $RC -ne 0 ]]; then
+  if [[ $RC -ne 0 ]]; then
     echo "[ERROR] lm_eval local-completions failed with rc=$RC; not retrying with chat on TRT-LLM due to known schema bug (#5393)."
     exit $RC
-    fi
-
+  fi
 
   # Append a Markdown table to the GitHub Actions job summary
-  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+    echo "[DIAG] Writing Markdown summary to GITHUB_STEP_SUMMARY"
     python3 bench_serving/lm_eval_to_md.py \
       --results-dir "/workspace/${EVAL_RESULT_DIR}" \
       --task "${EVAL_TASK:-gsm8k}" \
@@ -237,7 +334,7 @@ PY
       >> "$GITHUB_STEP_SUMMARY" || true
   fi
 
-  echo "Evaluation completed. Results in /workspace/${EVAL_RESULT_DIR}"
+  echo "[INFO] Evaluation completed. Results in /workspace/${EVAL_RESULT_DIR}"
   exit 0
 else
   # Default values for optional vars used by the benchmark
@@ -245,7 +342,6 @@ else
   OSL=${OSL:-256}
   RANDOM_RANGE_RATIO=${RANDOM_RANGE_RATIO:-1.0}
   RESULT_FILENAME=${RESULT_FILENAME:-results}
-
   # Install deps and run benchmark
   python3 -m pip install -q --upgrade pip || true
   python3 -m pip install -q --no-cache-dir datasets pandas || true
@@ -253,17 +349,15 @@ else
     git clone https://github.com/kimbochen/bench_serving.git
   fi
 
-  set -x
   python3 bench_serving/benchmark_serving.py \
-    --model=$MODEL \
+    --model="$MODEL" \
     --backend=openai \
-    --base-url="http://0.0.0.0:$PORT" \
+    --base-url="$OPENAI_SERVER_BASE" \
     --dataset-name=random \
-    --random-input-len=$ISL --random-output-len=$OSL --random-range-ratio=$RANDOM_RANGE_RATIO \
-    --num-prompts=$(( $CONC * 10 )) --max-concurrency=$CONC \
+    --random-input-len="$ISL" --random-output-len="$OSL" --random-range-ratio="$RANDOM_RANGE_RATIO" \
+    --num-prompts=$(( CONC * 10 )) --max-concurrency="$CONC" \
     --request-rate=inf --ignore-eos \
     --save-result --percentile-metrics='ttft,tpot,itl,e2el' \
     --result-dir=/workspace/ \
-    --result-filename=$RESULT_FILENAME.json
-  set +x
+    --result-filename="$RESULT_FILENAME.json"
 fi
