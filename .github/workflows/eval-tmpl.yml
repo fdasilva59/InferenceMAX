@@ -66,6 +66,7 @@ env:
   EVAL_RESULT_DIR: eval_out
   # Server-side concurrency default (used by some server scripts)
   CONC: '32'
+  MAX_MODEL_LEN: '8192'
 
 jobs:
   eval:
