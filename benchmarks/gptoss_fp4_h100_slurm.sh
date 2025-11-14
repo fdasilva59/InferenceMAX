@@ -31,11 +31,12 @@ PORT=${PORT:-8888}
 
 set -x
 PYTHONNOUSERSITE=1 vllm serve $MODEL --host=0.0.0.0 --port=$PORT \
---config config.yaml \
---gpu-memory-utilization=0.9 \
---tensor-parallel-size=$TP \
---max-num-seqs=$CONC  \
---disable-log-requests > $SERVER_LOG 2>&1 &
+  --config config.yaml \
+  --gpu-memory-utilization=0.9 \
+  --tensor-parallel-size=$TP \
+  --max-num-seqs=$CONC  \
+  --disable-log-requests \
+  > $SERVER_LOG 2>&1 &
 
 set +x
 while IFS= read -r line; do
@@ -182,8 +183,8 @@ PY
     python3 bench_serving/lm_eval_to_md.py \
       --results-dir "/workspace/${EVAL_RESULT_DIR}" \
       --task "${EVAL_TASK:-gsm8k}" \
-      --framework "${FRAMEWORK:-vLLM}" \
-      --precision "${PRECISION:-fp16}" \
+      --framework "${FRAMEWORK}" \
+      --precision "${PRECISION}" \
       --tp "${TP:-1}" \
       --ep "${EP_SIZE:-1}" \
       --dp-attention "${DP_ATTENTION:-false}" \

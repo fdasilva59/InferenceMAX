@@ -210,8 +210,8 @@ PY
     python3 bench_serving/lm_eval_to_md.py \
       --results-dir "/workspace/${EVAL_RESULT_DIR}" \
       --task "${EVAL_TASK:-gsm8k}" \
-      --framework "${FRAMEWORK:-vLLM}" \
-      --precision "${PRECISION:-fp16}" \
+      --framework "${FRAMEWORK}" \
+      --precision "${PRECISION}" \
       --tp "${TP:-1}" \
       --ep "${EP_SIZE:-1}" \
       --dp-attention "${DP_ATTENTION:-false}" \
