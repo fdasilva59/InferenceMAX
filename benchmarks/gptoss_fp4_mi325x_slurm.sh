@@ -57,16 +57,18 @@ until curl --output /dev/null --silent --fail http://0.0.0.0:$PORT/health; do
 done
 kill $TAIL_PID
 
+# Source benchmark utilities
+source "$(dirname "$0")/benchmark_lib.sh"
+
 set -x
-BENCH_SERVING_DIR=$(mktemp -d /tmp/bmk-XXXXXX)
-git clone https://github.com/kimbochen/bench_serving.git $BENCH_SERVING_DIR
-python3 $BENCH_SERVING_DIR/benchmark_serving.py \
---model $MODEL --backend vllm \
---base-url http://0.0.0.0:$PORT \
---dataset-name random \
---random-input-len $ISL --random-output-len $OSL --random-range-ratio $RANDOM_RANGE_RATIO \
---num-prompts $(( $CONC * 10 )) --max-concurrency $CONC \
---request-rate inf --ignore-eos \
---save-result --percentile-metrics 'ttft,tpot,itl,e2el' \
---result-dir /workspace/ \
---result-filename $RESULT_FILENAME.json
+run_benchmark_serving \
+    --model "$MODEL" \
+    --port "$PORT" \
+    --backend vllm \
+    --input-len "$ISL" \
+    --output-len "$OSL" \
+    --random-range-ratio "$RANDOM_RANGE_RATIO" \
+    --num-prompts $(( $CONC * 10 )) \
+    --max-concurrency "$CONC" \
+    --result-filename "$RESULT_FILENAME" \
+    --result-dir /workspace/
