@@ -10,6 +10,7 @@
 #   --server-pid: Server process ID (required)
 #   --sleep-interval: Sleep interval between health checks (optional, default: 5)
 wait_for_server_ready() {
+    set -x
     local port=""
     local server_log=""
     local server_pid=""
