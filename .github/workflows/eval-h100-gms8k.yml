@@ -37,7 +37,7 @@ on:
     paths:
       - '.github/workflows/eval-h100-gms8k.yml'
       - '.github/workflows/eval-tmpl.yml'
-      - 'benchmarks/gptoss_fp4_mi325x_slurm.sh'
+      - 'benchmarks/dsr1_fp8_mi325x_slurm.sh'
 
 jobs:
   eval:
@@ -47,8 +47,8 @@ jobs:
       runner: mi325x-tw_1
       image: ${{ inputs.image || 'rocm/7.0:rocm7.0_ubuntu_22.04_vllm_0.10.1_instinct_20250927_rc1' }}
       model: ${{ inputs.model || 'openai/gpt-oss-120b' }}
-      framework: vllm
-      precision: fp4
+      framework: sglang
+      precision: fp8
       exp-name: gptoss_gsm8k_poc
       tp: ${{ inputs.tp || '4' }}
       ep: '1'
