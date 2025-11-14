@@ -2,6 +2,74 @@
 
 # Shared benchmarking utilities for InferenceMAX
 
+# Wait for server to be ready by polling the health endpoint
+# All parameters are required
+# Parameters:
+#   --port: Server port
+#   --server-log: Path to server log file
+#   --server-pid: Server process ID (required)
+#   --sleep-interval: Sleep interval between health checks (optional, default: 5)
+wait_for_server_ready() {
+    local port=""
+    local server_log=""
+    local server_pid=""
+    local sleep_interval=5
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --port)
+                port="$2"
+                shift 2
+                ;;
+            --server-log)
+                server_log="$2"
+                shift 2
+                ;;
+            --server-pid)
+                server_pid="$2"
+                shift 2
+                ;;
+            --sleep-interval)
+                sleep_interval="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown parameter: $1"
+                return 1
+                ;;
+        esac
+    done
+
+    # Validate required parameters
+    if [[ -z "$port" ]]; then
+        echo "Error: --port is required"
+        return 1
+    fi
+    if [[ -z "$server_log" ]]; then
+        echo "Error: --server-log is required"
+        return 1
+    fi
+    if [[ -z "$server_pid" ]]; then
+        echo "Error: --server-pid is required"
+        return 1
+    fi
+
+    # Show logs until server is ready
+    tail -f "$server_log" &
+    local TAIL_PID=$!
+    set +x
+    until curl --output /dev/null --silent --fail http://0.0.0.0:$port/health; do
+        if ! kill -0 "$server_pid" 2>/dev/null; then
+            echo "Server died before becoming healthy. Exiting."
+            kill $TAIL_PID
+            exit 1
+        fi
+        sleep "$sleep_interval"
+    done
+    kill $TAIL_PID
+}
+
 # Run benchmark serving with standardized parameters
 # All parameters are required
 # Parameters:

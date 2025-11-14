@@ -72,21 +72,11 @@ PYTHONNOUSERSITE=1 mpirun -n 1 --oversubscribe --allow-run-as-root \
     
 SERVER_PID=$!
 
-# Show logs until server is ready
-tail -f $SERVER_LOG &
-TAIL_PID=$!
-set +x
-until curl --output /dev/null --silent --fail http://0.0.0.0:$PORT/health; do
-    if ! kill -0 $SERVER_PID 2>/dev/null; then
-        echo "Server died before becoming healthy. Exiting."
-        exit 1
-    fi
-    sleep 5
-done
-kill $TAIL_PID
-
 # Source benchmark utilities
 source "$(dirname "$0")/benchmark_lib.sh"
+
+# Wait for server to be ready
+wait_for_server_ready --port "$PORT" --server-log "$SERVER_LOG" --server-pid "$SERVER_PID"
 
 set -x
 run_benchmark_serving \

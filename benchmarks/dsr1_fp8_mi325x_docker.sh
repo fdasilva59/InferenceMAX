@@ -28,17 +28,13 @@ python3 -m sglang.launch_server \
     --max-prefill-tokens 196608 \
     --cuda-graph-max-bs 128 > $SERVER_LOG 2>&1 &
 
-# Show logs until server is ready
-tail -f $SERVER_LOG &
-TAIL_PID=$!
-set +x
-until curl --output /dev/null --silent --fail http://0.0.0.0:$PORT/health; do
-    sleep 5
-done
-kill $TAIL_PID
+SERVER_PID=$!
 
 # Source benchmark utilities
 source "$(dirname "$0")/benchmark_lib.sh"
+
+# Wait for server to be ready
+wait_for_server_ready --port "$PORT" --server-log "$SERVER_LOG" --server-pid "$SERVER_PID"
 
 set -x
 run_benchmark_serving \

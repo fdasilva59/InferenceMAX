@@ -53,19 +53,13 @@ vllm serve $MODEL --host 0.0.0.0 --port $PORT --config config.yaml \
 
 SERVER_PID=$!
 
-# Show logs until server is ready
-tail -f $SERVER_LOG &
-TAIL_PID=$!
-set +x
-until curl --output /dev/null --silent --fail http://0.0.0.0:$PORT/health; do
-    sleep 5
-done
-kill $TAIL_PID
-
-pip install -q datasets pandas
-
 # Source benchmark utilities
 source "$(dirname "$0")/benchmark_lib.sh"
+
+# Wait for server to be ready
+wait_for_server_ready --port "$PORT" --server-log "$SERVER_LOG" --server-pid "$SERVER_PID"
+
+pip install -q datasets pandas
 
 set -x
 run_benchmark_serving \

@@ -26,19 +26,15 @@ PYTHONNOUSERSITE=1 python3 -m sglang.launch_server --model-path $MODEL --host 0.
 --ep-size $EP_SIZE --quantization modelopt_fp4 --enable-flashinfer-allreduce-fusion --scheduler-recv-interval $SCHEDULER_RECV_INTERVAL \
 --enable-symm-mem --disable-radix-cache --attention-backend trtllm_mla --moe-runner-backend flashinfer_trtllm --stream-interval 10 > $SERVER_LOG 2>&1 &
 
-# Show logs until server is ready
-tail -f $SERVER_LOG &
-TAIL_PID=$!
-set +x
-until curl --output /dev/null --silent --fail http://0.0.0.0:$PORT/health; do
-    sleep 5
-done
-kill $TAIL_PID
-
-pip install -q datasets pandas
+SERVER_PID=$!
 
 # Source benchmark utilities
 source "$(dirname "$0")/benchmark_lib.sh"
+
+# Wait for server to be ready
+wait_for_server_ready --port "$PORT" --server-log "$SERVER_LOG" --server-pid "$SERVER_PID"
+
+pip install -q datasets pandas
 
 set -x
 run_benchmark_serving \
