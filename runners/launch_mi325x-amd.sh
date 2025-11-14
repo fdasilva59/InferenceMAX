@@ -1,5 +1,7 @@
 #!/usr/bin/bash
 
+set -x 
+
 sudo sh -c 'echo 0 > /proc/sys/kernel/numa_balancing'
 
 HF_HUB_CACHE_MOUNT="/home/kimbosemianalysis/hf_hub_cache/"
