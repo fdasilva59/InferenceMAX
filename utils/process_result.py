@@ -36,6 +36,14 @@ data = {
     'input_tput_per_gpu': (float(bmk_result['total_token_throughput']) - float(bmk_result['output_throughput']) )/ prefill_gpus
 }
 
+# Check if both PREFILL_GPUS and DECODE_GPUS are set and non-empty
+if prefill_gpus_str and decode_gpus_str:
+    data['num_prefill_gpu'] = int(prefill_gpus_str)
+    data['num_decode_gpu'] = int(decode_gpus_str)
+    data['disagg'] = True
+else:
+    data['disagg'] = False
+
 if mtp_mode:  # MTP
     data['mtp'] = mtp_mode
 
