@@ -97,8 +97,8 @@ if [[ $FRAMEWORK == "dynamo-trtllm" ]]; then
         if [ "$isl" = "1024" ] && [ "$osl" = "1024" ]; then
             if [ "$mtp_mode" = "on" ]; then
                 echo "Running 1k/1k MTP=ON configurations"
-
-                ./submit_disagg.sh "mtp=on" "tep" 1 4 8 32 128 "0.9" 3 0 "1 2 4 8 16 36"
+                #                                 ctx_num  gen_num  gen_tp_size gen_batch_size  gen_max_num_tokens  gen_gpu_memory_fraction  gen_mtp_size  gen_eplb_num_slots
+                ./submit_disagg.sh "mtp=on" "tep"    1        4          8            32               128                  "0.9"                  3                0          "1 2 4 8 16 36"
 
                 ./submit_disagg.sh "mtp=on" "dep" 1 1 16 64 256 "0.7" 3 0 "512 1075"
 
