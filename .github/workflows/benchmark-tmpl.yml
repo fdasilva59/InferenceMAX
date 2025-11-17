@@ -143,7 +143,6 @@ jobs:
             echo "Waiting for result file... (attempt $i)"
             sleep 1
           done
-   
           if [ -z "$FOUND_RESULT_FILE" ]; then
             echo "Run failed: Benchmark result $RESULT_FILENAME.json not found." >&2
             exit 1
