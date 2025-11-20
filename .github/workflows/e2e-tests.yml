@@ -1,6 +1,9 @@
 name: End-to-End Tests
 run-name: e2e Test - ${{ github.event.inputs.generate-cli-command }}
 
+env:
+    HF_TOKEN: ${{ secrets.HF_TOKEN }}
+
 on:
     workflow_dispatch:
         inputs:
