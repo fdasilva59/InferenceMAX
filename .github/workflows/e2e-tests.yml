@@ -11,7 +11,8 @@ on:
 
 jobs:
     get-jobs:
-        runs-on: ubuntu-latest
+        runs-on: [self-hosted, h100]
+        #ubuntu-latest
         outputs:
             search-space-config: ${{ steps.get-jobs.outputs.search-space-config }}
         steps:
@@ -57,7 +58,8 @@ jobs:
     calc-success-rate:
         needs: collect-results
         if: ${{ always() }}
-        runs-on: ubuntu-latest
+        runs-on: [self-hosted, h100]
+        #ubuntu-latest
 
         env:
             RESULTS_DIR: "results/"
