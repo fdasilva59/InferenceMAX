@@ -19,6 +19,12 @@ jobs:
             - name: Checkout code
               uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
 
+            # Fix to allowed to install packages safely
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                 python-version: '3.12'
+
             - id: get-jobs
               run: |
                   pip install pydantic
@@ -77,6 +83,13 @@ jobs:
               with:
                   path: ${{ env.RESULTS_DIR }}
                   pattern: results_*
+
+            # Fix to allowed to install packages safely
+            - name: Set up Python
+              uses: actions/setup-python@v5
+              with:
+                 python-version: '3.12'
+
 
             - name: Install python dependencies
               run: pip install PyGithub
